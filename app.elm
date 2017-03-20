@@ -4,6 +4,7 @@ import Window
 import Time exposing (Time)
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Random
 
 
 main =
@@ -50,15 +51,11 @@ type Msg
     = KeyPressed Key
     | SizeUpdated Window.Size
     | Tick Time
-    | MaybeSpawnFruitFruitSpawn FruitSpawn
-
-
-
--- todo: block?
+    | MaybeSpawnFruit FruitSpawn
 
 
 type alias FruitSpawn =
-    { position : ( Int, Int )
+    { position : Block
     , chance : Int
     }
 
@@ -106,13 +103,92 @@ update msg game =
             ( updateDirection direction game, Cmd.none )
 
         SizeUpdated size ->
-            ( game, Cmd.none )
+            ( { game | dimensions = size }, Cmd.none )
 
         Tick time ->
-            ( game, Cmd.none )
+            gameStep game
 
-        MaybeSpawnFruitFruitSpawn spawn ->
-            ( game, Cmd.none )
+        MaybeSpawnFruit spawn ->
+            ( spawnFruit spawn game, Cmd.none )
+
+
+gameStep : Game -> ( Game, Cmd Msg )
+gameStep game =
+    if game.isDead || game.paused then
+        ( game, Cmd.none )
+    else
+        ( game, Cmd.none ) |> checkIfOutOfBounds |> updateFruit
+
+
+
+-- TODO: split in multiple files
+-- TODO: will this cmd overwtite the others? looks like a bad pattern!
+
+
+checkIfOutOfBounds : ( Game, Cmd Msg ) -> ( Game, Cmd Msg )
+checkIfOutOfBounds ( game, cmd ) =
+    let
+        head =
+            snakeHead game.snake
+
+        isOutOfBounds =
+            headIsOutOfBounds head game.direction
+    in
+        ( { game | isDead = isOutOfBounds }, cmd )
+
+
+snakeHead : Snake -> Block
+snakeHead snake =
+    List.head snake |> Maybe.withDefault (Block 0 0)
+
+
+headIsOutOfBounds : Block -> Direction -> Bool
+headIsOutOfBounds head dir =
+    case dir of
+        Up ->
+            head.x == 0
+
+        Right ->
+            head.x == 49
+
+        Down ->
+            head.y == 49
+
+        Left ->
+            head.y == 0
+
+
+updateFruit : ( Game, Cmd Msg ) -> ( Game, Cmd Msg )
+updateFruit ( game, cmd ) =
+    case game.fruit of
+        Nothing ->
+            ( game, Random.generate MaybeSpawnFruit fruitSpawnGenerator )
+
+        Just fruit ->
+            if game.ateFruit then
+                ( { game | fruit = Nothing }, cmd )
+            else
+                ( game, cmd )
+
+
+fruitSpawnGenerator : Random.Generator FruitSpawn
+fruitSpawnGenerator =
+    let
+        position =
+            Random.pair (Random.int 0 49) (Random.int 0 49)
+
+        chance =
+            Random.int 0 9
+    in
+        Random.map2 (\( x, y ) c -> FruitSpawn (Block x y) c) position chance
+
+
+spawnFruit : FruitSpawn -> Game -> Game
+spawnFruit spawn game =
+    if spawn.chance == 9 then
+        { game | fruit = Just spawn.position }
+    else
+        game
 
 
 updateDirection : Direction -> Game -> Game
